@@ -54,6 +54,20 @@ jj_log_info("NETWORK", "Connection established to %s:%d", ip, port);
 jj_log_error("DB", "Query failed: %s", db_err);
 ```
 
+### 4. Best Practices: Categories
+Instead of using raw strings for categories, define them as macros. This allows the compiler to catch typos.
+
+```c
+// In a header file (e.g., log_categories.h)
+#define LOG_CAT_NET  "NETWORK"
+#define LOG_CAT_DB   "DATABASE"
+#define LOG_CAT_UI   "UI"
+
+// In your code
+jj_log_info(LOG_CAT_NET, "Server started port %d", 8080);
+// jj_log_info(LOG_CAT_NT, ...); // Compilation Error: 'LOG_CAT_NT' undeclared
+```
+
 ## build
 Compile your application with `jj_log.c` and link against `pthread`.
 
