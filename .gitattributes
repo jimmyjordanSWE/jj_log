@@ -1,0 +1,3 @@
+test_main.c export-ignore
+test_app export-ignore
+.gitignore export-ignore

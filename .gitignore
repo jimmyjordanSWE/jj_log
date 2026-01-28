@@ -1,2 +1,5 @@
+test_app
+test_main.c
 *.o
-test_jj_log
+build/
+
