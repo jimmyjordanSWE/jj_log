@@ -1,5 +1,13 @@
 test_app
 test_main.c
+stress_test
+stress_test.c
+main.c
+Makefile
+
+*.py
+
 *.o
 build/
+logs/
 
