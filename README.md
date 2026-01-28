@@ -1,105 +1,65 @@
-# jj_log — A C99 Logging Library
+# jj_log
 
-> **Version**: 1.0.0  
-> **License**: MIT  
-> **Files**: `jj_log.c`, `jj_log.h`
+A lightweight, high-performance, **asynchronous** logging library for C applications.
 
-## Features
+## Key Features
 
-- 6 log levels (TRACE → FATAL)
-- Free-form category tags for filtering
-- File output with rotation
-- Console output (optional)
-- Thread-safe by default (toggleable)
+*   **Asynchronous Logging**: Uses a lock-free-read / mutex-write Ring Buffer and a dedicated background thread to handle file I/O. The hot path (your application code) never blocks on disk writes.
+*   **Non-blocking**: If the ring buffer fills up, logs are dropped rather than blocking the main thread (performance first).
+*   **Thread Save**: Fully thread-safe designed for high-concurrency environments.
+*   **Simplicity**: Single header and source file (`jj_log.h`, `jj_log.c`).
+*   **Zero Dependencies**: Depends only on standard POSIX libraries (`pthread`, `time`, etc.).
 
-## Quick Start
+## How it Works
+
+1.  **Ring Buffer**: When you call `jj_log_info(...)`, the message is formatted and copied into a fixed-size memory ring buffer. This operation is extremely fast.
+2.  **Worker Thread**: A background thread wakes up when data is available, consumes messages from the buffer, and writes them to the log file.
+3.  **No `fflush`**: To maximize throughput, we rely on the OS page cache and do not force a disk flush for every line.
+
+## Usage
+
+### 1. Integration
+Copy `jj_log.c` and `jj_log.h` into your project.
+
+### 2. Initialization
+Initialize the library with your desired config at the start of your application.
 
 ```c
 #include "jj_log.h"
 
-int main(void) {
-    jj_log_config cfg = { .file_path = "app.log" };
-    jj_log_init(&cfg);
-    
-    jj_log_info("HTTP", "Request from %s", ip);   // Macro, not a function
-    jj_log_error("DB", "Query failed: %s", err);  // Auto-captures __FILE__, __LINE__
-    
-    jj_log_fini();
+int main() {
+    jj_log_config cfg = {
+        .file_path = "app.log",
+        .console_enabled = true,
+        .console_color = true,
+        .ring_buffer_size = 4096 // Number of messages to buffer
+    };
+
+    if (jj_log_init(&cfg) != 0) {
+        // Handle error
+    }
+
+    // ... application code ...
+
+    jj_log_fini(); // Stop thread and cleanup
+    return 0;
 }
 ```
 
-**Full configuration options:**
-```c
-jj_log_config cfg = {
-    .file_path       = "app.log",    // Required
-    .file_max_bytes  = 10*1024*1024, // Rotate at 10MB (0 = no rotation)
-    .console_enabled = true,         // Also write to stderr
-    .console_color   = true,         // ANSI colors on console
-};
-```
-
-> Log files are created with timestamps: `app.log.20260121_143205`. On rotation, the current file is closed and a new timestamped file is started. Old files are never deleted.
-
-## Log Levels
-
-| Level | Macro | Purpose |
-|-------|-------|---------|
-| 0 | `jj_log_trace(cat, fmt, ...)` | Granular debugging: function entry/exit, variable values |
-| 1 | `jj_log_debug(cat, fmt, ...)` | Development info: state changes, decision points |
-| 2 | `jj_log_info(cat, fmt, ...)` | Normal operations: startup, shutdown, milestones |
-| 3 | `jj_log_warn(cat, fmt, ...)` | Potential issues: retry needed, deprecated usage |
-| 4 | `jj_log_error(cat, fmt, ...)` | Failures: operation failed but app continues |
-| 5 | `jj_log_fatal(cat, fmt, ...)` | Critical: app cannot continue |
-
-- **cat**: Category string (e.g., `"HTTP"`, `"DB"`)
-- **fmt**: printf-style format string (`%s`, `%d`, `%f`, etc.)
-
-## Categories
-
-All log macros require a category as the first argument:
+### 3. Logging
+Use the macros for logging. They support `printf`-style formatting.
 
 ```c
-jj_log_info("HTTP", "Request received");
-jj_log_warn("CACHE", "Cache miss for key %s", key);
+jj_log_info("NETWORK", "Connection established to %s:%d", ip, port);
+jj_log_error("DB", "Query failed: %s", db_err);
 ```
 
-**Output**:
-```
-2026-01-21 14:32:05 INFO  [HTTP] server.c:42: Request received
-2026-01-21 14:32:06 WARN  [CACHE] cache.c:78: Cache miss for key user_123
-```
+## build
+Compile your application with `jj_log.c` and link against `pthread`.
 
-Categories are free-form strings. Define constants for compile-time checks:
-```c
-#define CAT_HTTP  "HTTP"
-#define CAT_DB    "DB"
+```bash
+gcc -o my_app main.c jj_log.c -lpthread
 ```
 
-
-## Thread Safety
-
-This library is **thread-safe by default** using an internal mutex. You don't need to do anything for multi-threaded programs.
-
-**What is thread safety and why does it matter?**
-
-Logging involves multiple steps: format the message, write to file, write to console. If two threads run these steps at the same time without protection, their outputs get mixed together:
-
-```
-2026-01-21 14:32:05 INFO  [HTTP] server.c:42: Req2026-01-21 14:32:05 ERROR [DB] db.c:87: Connection lost
-uest received   <-- corrupted!
-```
-
-The library prevents this by locking each log call so only one thread logs at a time.
-
----
-
-**Lock control API:**
-
-| Function | Effect |
-|----------|--------|
-| `jj_log_lock_disable()` | Turn off locking |
-| `jj_log_lock_enable()` | Turn on locking (uses custom lock if set, else internal mutex) |
-| `jj_log_set_lock(fn, udata)` | Set custom lock function |
-| `jj_log_set_lock(NULL, NULL)` | Clear custom lock, use internal mutex |
-
-
+## Performance Note
+Under extreme load (e.g., 8 threads spinning in a tight loop), if the background thread cannot keep up with the disk I/O, the ring buffer may fill up. In this case, `jj_log` chooses to **drop** the new message rather than block your application. This ensures your application latency remains predictable.
